@@ -21,6 +21,7 @@ import android.webkit.WebViewClient;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.LinearLayout;
+import android.widget.ProgressBar;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import java.io.BufferedReader;
@@ -32,6 +33,8 @@ public class MainActivity extends Activity {
     private LinearLayout dashboardLayout;
     private LinearLayout webContainerLayout;
     private TextView webHeaderTitle;
+    private TextView webTipBanner;
+    private ProgressBar webProgressBar;
     private WebView xworkingWebView;
     private WebView twitterWebView;
     private TextView logTextView;
@@ -64,6 +67,20 @@ public class MainActivity extends Activity {
         loadEngineScript();
         setupUI();
         initWebViews();
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        if (xworkingWebView != null) xworkingWebView.onResume();
+        if (twitterWebView != null) twitterWebView.onResume();
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        if (xworkingWebView != null) xworkingWebView.onPause();
+        if (twitterWebView != null) twitterWebView.onPause();
     }
 
     private void loadEngineScript() {
@@ -260,6 +277,22 @@ public class MainActivity extends Activity {
 
         webContainerLayout.addView(browserBar);
 
+        // Loading Progress Bar
+        webProgressBar = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
+        webProgressBar.setLayoutParams(new LinearLayout.LayoutParams(-1, 8));
+        webProgressBar.setVisibility(View.GONE);
+        webContainerLayout.addView(webProgressBar);
+
+        // Helpful Tip Banner for X Login
+        webTipBanner = new TextView(this);
+        webTipBanner.setText("💡 Tip: Neeche 'Email or username' mein apna Username aur Password likhein.");
+        webTipBanner.setTextColor(0xFF00E5FF);
+        webTipBanner.setTextSize(11);
+        webTipBanner.setBackgroundColor(0xFF151922);
+        webTipBanner.setPadding(14, 8, 14, 8);
+        webTipBanner.setVisibility(View.GONE);
+        webContainerLayout.addView(webTipBanner);
+
         // WebViews
         xworkingWebView = new WebView(this);
         xworkingWebView.setLayoutParams(new LinearLayout.LayoutParams(-1, -1));
@@ -280,8 +313,11 @@ public class MainActivity extends Activity {
 
         btnBackToDash.setOnClickListener(v -> showTab(0));
         btnReload.setOnClickListener(v -> {
-            if (currentTab == 1) xworkingWebView.reload();
-            else if (currentTab == 2) twitterWebView.reload();
+            if (currentTab == 1) {
+                xworkingWebView.reload();
+            } else if (currentTab == 2) {
+                twitterWebView.loadUrl("https://x.com/login");
+            }
         });
 
         startButton.setOnClickListener(v -> startAutoPilot());
@@ -321,11 +357,13 @@ public class MainActivity extends Activity {
         if (tabIndex == 0) {
             dashboardLayout.setVisibility(View.VISIBLE);
             webContainerLayout.setVisibility(View.GONE);
+            webTipBanner.setVisibility(View.GONE);
             xworkingWebView.setVisibility(View.GONE);
             twitterWebView.setVisibility(View.GONE);
         } else if (tabIndex == 1) {
             dashboardLayout.setVisibility(View.GONE);
             webContainerLayout.setVisibility(View.VISIBLE);
+            webTipBanner.setVisibility(View.GONE);
             webHeaderTitle.setText("🌐 xworking.net Login");
             xworkingWebView.setVisibility(View.VISIBLE);
             twitterWebView.setVisibility(View.GONE);
@@ -335,6 +373,7 @@ public class MainActivity extends Activity {
         } else if (tabIndex == 2) {
             dashboardLayout.setVisibility(View.GONE);
             webContainerLayout.setVisibility(View.VISIBLE);
+            webTipBanner.setVisibility(View.VISIBLE);
             webHeaderTitle.setText("🐦 X (Twitter) Login");
             xworkingWebView.setVisibility(View.GONE);
             twitterWebView.setVisibility(View.VISIBLE);
@@ -401,7 +440,7 @@ public class MainActivity extends Activity {
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
                 String url = request.getUrl().toString();
                 if (url.startsWith("http://") || url.startsWith("https://")) {
-                    return false; // Tells WebView to handle and render the redirect internally
+                    return false; // Load inside WebView
                 }
                 return true;
             }
@@ -431,21 +470,30 @@ public class MainActivity extends Activity {
         s.setAllowFileAccess(true);
         s.setAllowContentAccess(true);
         s.setMediaPlaybackRequiresUserGesture(false);
-        s.setSupportMultipleWindows(true);
-        s.setJavaScriptCanOpenWindowsAutomatically(true);
+        s.setSupportMultipleWindows(false); // Prevents popup redirects from blanking the screen
+        s.setJavaScriptCanOpenWindowsAutomatically(false);
         s.setCacheMode(WebSettings.LOAD_DEFAULT);
 
         // Standard official Chrome Mobile user agent
         s.setUserAgentString("Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36");
 
-        // Handle popup/child auth windows directly inside the same WebView
         wv.setWebChromeClient(new WebChromeClient() {
             @Override
+            public void onProgressChanged(WebView view, int newProgress) {
+                if (webProgressBar != null) {
+                    if (newProgress < 100) {
+                        webProgressBar.setVisibility(View.VISIBLE);
+                        webProgressBar.setProgress(newProgress);
+                    } else {
+                        webProgressBar.setVisibility(View.GONE);
+                    }
+                }
+            }
+
+            @Override
             public boolean onCreateWindow(WebView view, boolean isDialog, boolean isUserGesture, Message resultMsg) {
-                WebView.WebViewTransport transport = (WebView.WebViewTransport) resultMsg.obj;
-                transport.setWebView(view);
-                resultMsg.sendToTarget();
-                return true;
+                // Block external OAuth popups so main view doesn't navigate away and turn black
+                return false;
             }
         });
     }
