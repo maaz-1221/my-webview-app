@@ -3,14 +3,18 @@ package com.xcelerate.mobile;
 import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.graphics.Typeface;
+import android.net.http.SslError;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.Message;
 import android.view.View;
 import android.view.WindowManager;
 import android.webkit.CookieManager;
 import android.webkit.JavascriptInterface;
+import android.webkit.SslErrorHandler;
 import android.webkit.WebChromeClient;
+import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
@@ -26,6 +30,8 @@ import java.io.InputStreamReader;
 public class MainActivity extends Activity {
 
     private LinearLayout dashboardLayout;
+    private LinearLayout webContainerLayout;
+    private TextView webHeaderTitle;
     private WebView xworkingWebView;
     private WebView twitterWebView;
     private TextView logTextView;
@@ -81,7 +87,7 @@ public class MainActivity extends Activity {
         root.setBackgroundColor(0xFF0B0E14);
         root.setLayoutParams(new LinearLayout.LayoutParams(-1, -1));
 
-        // ── TOP NAVIGATION TABS (Dashboard, xworking Login, Twitter Login) ──
+        // ── TOP NAVIGATION TABS ──
         LinearLayout tabRow = new LinearLayout(this);
         tabRow.setOrientation(LinearLayout.HORIZONTAL);
         tabRow.setBackgroundColor(0xFF151922);
@@ -97,146 +103,186 @@ public class MainActivity extends Activity {
         tabXworkingBtn.setText("🌐 xworking Login");
         tabXworkingBtn.setTextSize(11);
         tabXworkingBtn.setTypeface(Typeface.DEFAULT_BOLD);
-        tabXworkingBtn.setLayoutParams(new LinearLayout.LayoutParams(0, -2, 1.1f));
+        tabXworkingBtn.setLayoutParams(new LinearLayout.LayoutParams(0, -2, 1f));
 
         tabTwitterBtn = new Button(this);
         tabTwitterBtn.setText("🐦 X Login");
         tabTwitterBtn.setTextSize(11);
         tabTwitterBtn.setTypeface(Typeface.DEFAULT_BOLD);
-        tabTwitterBtn.setLayoutParams(new LinearLayout.LayoutParams(0, -2, 0.9f));
+        tabTwitterBtn.setLayoutParams(new LinearLayout.LayoutParams(0, -2, 1f));
 
         tabRow.addView(tabDashboardBtn);
         tabRow.addView(tabXworkingBtn);
         tabRow.addView(tabTwitterBtn);
         root.addView(tabRow);
 
-        // ── 1. DASHBOARD VIEW ──
+        // ── DASHBOARD CONTAINER ──
         dashboardLayout = new LinearLayout(this);
         dashboardLayout.setOrientation(LinearLayout.VERTICAL);
-        dashboardLayout.setPadding(20, 16, 20, 20);
         dashboardLayout.setLayoutParams(new LinearLayout.LayoutParams(-1, -1));
+        dashboardLayout.setPadding(16, 12, 16, 12);
 
-        TextView title = new TextView(this);
-        title.setText("⚡ MAAZ AUTO XCELERATE");
-        title.setTextSize(16);
-        title.setTextColor(0xFF00E5FF);
-        title.setTypeface(Typeface.DEFAULT_BOLD);
-        title.setPadding(0, 0, 0, 12);
-        dashboardLayout.addView(title);
+        // Header Title
+        TextView appTitle = new TextView(this);
+        appTitle.setText("⚡ MAAZ AUTO XCELERATE");
+        appTitle.setTextSize(18);
+        appTitle.setTextColor(0xFF00E5FF);
+        appTitle.setTypeface(Typeface.DEFAULT_BOLD);
+        appTitle.setPadding(0, 0, 0, 2);
+        dashboardLayout.addView(appTitle);
 
-        TextView boardLabel = new TextView(this);
-        boardLabel.setText("COMMUNITY BOARD URL:");
-        boardLabel.setTextSize(11);
-        boardLabel.setTextColor(0xFF8B98A5);
-        dashboardLayout.addView(boardLabel);
+        TextView appSub = new TextView(this);
+        appSub.setText("100% Video Watch (16s Sound ON) • Safe Boost • Auto-Pilot");
+        appSub.setTextSize(10);
+        appSub.setTextColor(0xFF8B98A5);
+        appSub.setPadding(0, 0, 0, 10);
+        dashboardLayout.addView(appSub);
+
+        // ── HUD METRICS ROW ──
+        LinearLayout hudRow = new LinearLayout(this);
+        hudRow.setOrientation(LinearLayout.HORIZONTAL);
+        hudRow.setLayoutParams(new LinearLayout.LayoutParams(-1, -2));
+        hudRow.setPadding(0, 0, 0, 12);
+
+        LinearLayout card1 = createHudCard("TASKS DONE", "0 / 8", 0xFF00E5FF);
+        LinearLayout card2 = createHudCard("WATCH TIMER", "0s / 16s", 0xFFFFAB00);
+        LinearLayout card3 = createHudCard("SOUND STATE", "STANDBY", 0xFF8B98A5);
+
+        card1.setLayoutParams(new LinearLayout.LayoutParams(0, -2, 1f));
+        card2.setLayoutParams(new LinearLayout.LayoutParams(0, -2, 1f));
+        card3.setLayoutParams(new LinearLayout.LayoutParams(0, -2, 1f));
+
+        hudRow.addView(card1);
+        hudRow.addView(card2);
+        hudRow.addView(card3);
+        dashboardLayout.addView(hudRow);
+
+        txtTaskCount = (TextView) card1.getChildAt(1);
+        txtTimer = (TextView) card2.getChildAt(1);
+        txtSound = (TextView) card3.getChildAt(1);
+
+        // Inputs
+        TextView lblBoard = new TextView(this);
+        lblBoard.setText("Board URL:");
+        lblBoard.setTextColor(0xFF8B98A5);
+        lblBoard.setTextSize(10);
+        dashboardLayout.addView(lblBoard);
 
         boardUrlEditText = new EditText(this);
         boardUrlEditText.setText("https://xworking.net/#board/C");
         boardUrlEditText.setTextColor(0xFFFFFFFF);
         boardUrlEditText.setBackgroundColor(0xFF151922);
-        boardUrlEditText.setPadding(14, 12, 14, 12);
+        boardUrlEditText.setTextSize(12);
+        boardUrlEditText.setPadding(10, 8, 10, 8);
         dashboardLayout.addView(boardUrlEditText);
 
-        TextView limitLabel = new TextView(this);
-        limitLabel.setText("DAILY TASKS LIMIT:");
-        limitLabel.setTextSize(11);
-        limitLabel.setTextColor(0xFF8B98A5);
-        limitLabel.setPadding(0, 12, 0, 4);
-        dashboardLayout.addView(limitLabel);
+        TextView lblLimit = new TextView(this);
+        lblLimit.setText("Task Limit:");
+        lblLimit.setTextColor(0xFF8B98A5);
+        lblLimit.setTextSize(10);
+        lblLimit.setPadding(0, 6, 0, 0);
+        dashboardLayout.addView(lblLimit);
 
         limitEditText = new EditText(this);
         limitEditText.setText("8");
         limitEditText.setTextColor(0xFFFFFFFF);
         limitEditText.setBackgroundColor(0xFF151922);
-        limitEditText.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);
-        limitEditText.setPadding(14, 12, 14, 12);
+        limitEditText.setTextSize(12);
+        limitEditText.setPadding(10, 8, 10, 8);
         dashboardLayout.addView(limitEditText);
 
-        LinearLayout btnRow = new LinearLayout(this);
-        btnRow.setOrientation(LinearLayout.HORIZONTAL);
-        btnRow.setPadding(0, 14, 0, 14);
-
+        // Control Buttons
         startButton = new Button(this);
-        startButton.setText("START AUTO-PILOT");
-        startButton.setBackgroundColor(0xFF00E5FF);
+        startButton.setText("▶  START AUTO-PILOT");
+        startButton.setBackgroundColor(0xFF00E676);
         startButton.setTextColor(0xFF0B0E14);
         startButton.setTypeface(Typeface.DEFAULT_BOLD);
-        startButton.setLayoutParams(new LinearLayout.LayoutParams(0, -2, 1f));
-        btnRow.addView(startButton);
+        dashboardLayout.addView(startButton);
 
         stopButton = new Button(this);
-        stopButton.setText("STOP");
+        stopButton.setText("⏹  STOP ENGINE");
         stopButton.setBackgroundColor(0xFFF4212E);
         stopButton.setTextColor(0xFFFFFFFF);
-        stopButton.setTypeface(Typeface.DEFAULT_BOLD);
         stopButton.setVisibility(View.GONE);
-        stopButton.setLayoutParams(new LinearLayout.LayoutParams(0, -2, 1f));
-        btnRow.addView(stopButton);
+        dashboardLayout.addView(stopButton);
 
-        dashboardLayout.addView(btnRow);
-
-        // ── LIVE TELEMETRY STATUS HUD CARDS ──
-        LinearLayout hudRow = new LinearLayout(this);
-        hudRow.setOrientation(LinearLayout.HORIZONTAL);
-        hudRow.setPadding(0, 0, 0, 12);
-
-        LinearLayout taskCard = createHudCard("TASKS DONE", "0 / 8", 0xFF00E5FF);
-        txtTaskCount = (TextView) taskCard.getChildAt(1);
-        taskCard.setLayoutParams(new LinearLayout.LayoutParams(0, -2, 1f));
-        hudRow.addView(taskCard);
-
-        View sp1 = new View(this);
-        sp1.setLayoutParams(new LinearLayout.LayoutParams(8, 1));
-        hudRow.addView(sp1);
-
-        LinearLayout timerCard = createHudCard("WATCH TIMER", "0s / 16s", 0xFFFFAB00);
-        txtTimer = (TextView) timerCard.getChildAt(1);
-        timerCard.setLayoutParams(new LinearLayout.LayoutParams(0, -2, 1.1f));
-        hudRow.addView(timerCard);
-
-        View sp2 = new View(this);
-        sp2.setLayoutParams(new LinearLayout.LayoutParams(8, 1));
-        hudRow.addView(sp2);
-
-        LinearLayout soundCard = createHudCard("SOUND STATE", "WAITING", 0xFF8B98A5);
-        txtSound = (TextView) soundCard.getChildAt(1);
-        soundCard.setLayoutParams(new LinearLayout.LayoutParams(0, -2, 1.2f));
-        hudRow.addView(soundCard);
-
-        dashboardLayout.addView(hudRow);
-
-        ScrollView sv = new ScrollView(this);
-        sv.setLayoutParams(new LinearLayout.LayoutParams(-1, 0, 1f));
-        sv.setBackgroundColor(0xFF05070A);
-        sv.setPadding(12, 12, 12, 12);
+        // Live Scrolling Log Terminal
+        ScrollView scroll = new ScrollView(this);
+        scroll.setLayoutParams(new LinearLayout.LayoutParams(-1, 0, 1f));
+        scroll.setBackgroundColor(0xFF05070A);
+        scroll.setPadding(8, 8, 8, 8);
 
         logTextView = new TextView(this);
-        logTextView.setText("[Ready] Pehli dafa chalane se pehle upar se 'xworking Login' aur 'X Login' karke apne accounts login karein.\nPhir 'Start Auto-Pilot' dabayein.\n");
-        logTextView.setTextColor(0xFF8B98A5);
-        logTextView.setTextSize(12);
+        logTextView.setText("⚡ System Ready. Authenticate in tabs above, then Start.\n");
+        logTextView.setTextColor(0xFF00E5FF);
+        logTextView.setTextSize(10);
         logTextView.setTypeface(Typeface.MONOSPACE);
-        sv.addView(logTextView);
-        dashboardLayout.addView(sv);
+        scroll.addView(logTextView);
 
+        dashboardLayout.addView(scroll);
         root.addView(dashboardLayout);
 
-        // ── 2. WEBVIEWS FOR LOGIN & BACKGROUND RUNNING ──
+        // ── WEB CONTAINER FOR LOGINS ──
+        webContainerLayout = new LinearLayout(this);
+        webContainerLayout.setOrientation(LinearLayout.VERTICAL);
+        webContainerLayout.setLayoutParams(new LinearLayout.LayoutParams(-1, -1));
+        webContainerLayout.setVisibility(View.GONE);
+
+        // Browser Top Action Bar
+        LinearLayout browserBar = new LinearLayout(this);
+        browserBar.setOrientation(LinearLayout.HORIZONTAL);
+        browserBar.setBackgroundColor(0xFF10141D);
+        browserBar.setPadding(12, 8, 12, 8);
+
+        Button btnBackToDash = new Button(this);
+        btnBackToDash.setText("🏠 Dashboard");
+        btnBackToDash.setTextSize(11);
+        btnBackToDash.setBackgroundColor(0xFF1C2230);
+        btnBackToDash.setTextColor(0xFF00E5FF);
+        btnBackToDash.setLayoutParams(new LinearLayout.LayoutParams(-2, -2));
+        browserBar.addView(btnBackToDash);
+
+        webHeaderTitle = new TextView(this);
+        webHeaderTitle.setText("Browser");
+        webHeaderTitle.setTextColor(0xFFFFFFFF);
+        webHeaderTitle.setTextSize(12);
+        webHeaderTitle.setPadding(16, 0, 0, 0);
+        webHeaderTitle.setLayoutParams(new LinearLayout.LayoutParams(0, -2, 1f));
+        browserBar.addView(webHeaderTitle);
+
+        Button btnReload = new Button(this);
+        btnReload.setText("🔄 Reload");
+        btnReload.setTextSize(11);
+        btnReload.setBackgroundColor(0xFF1C2230);
+        btnReload.setTextColor(0xFFFFFFFF);
+        btnReload.setLayoutParams(new LinearLayout.LayoutParams(-2, -2));
+        browserBar.addView(btnReload);
+
+        webContainerLayout.addView(browserBar);
+
+        // WebViews
         xworkingWebView = new WebView(this);
         xworkingWebView.setLayoutParams(new LinearLayout.LayoutParams(-1, -1));
-        xworkingWebView.setVisibility(View.GONE);
-        root.addView(xworkingWebView);
+        webContainerLayout.addView(xworkingWebView);
 
         twitterWebView = new WebView(this);
         twitterWebView.setLayoutParams(new LinearLayout.LayoutParams(-1, -1));
-        twitterWebView.setVisibility(View.GONE);
-        root.addView(twitterWebView);
+        webContainerLayout.addView(twitterWebView);
+
+        root.addView(webContainerLayout);
 
         setContentView(root);
 
-        // Tab click listeners
+        // Listeners
         tabDashboardBtn.setOnClickListener(v -> showTab(0));
         tabXworkingBtn.setOnClickListener(v -> showTab(1));
         tabTwitterBtn.setOnClickListener(v -> showTab(2));
+
+        btnBackToDash.setOnClickListener(v -> showTab(0));
+        btnReload.setOnClickListener(v -> {
+            if (currentTab == 1) xworkingWebView.reload();
+            else if (currentTab == 2) twitterWebView.reload();
+        });
 
         startButton.setOnClickListener(v -> startAutoPilot());
         stopButton.setOnClickListener(v -> stopAutoPilot());
@@ -274,10 +320,13 @@ public class MainActivity extends Activity {
 
         if (tabIndex == 0) {
             dashboardLayout.setVisibility(View.VISIBLE);
+            webContainerLayout.setVisibility(View.GONE);
             xworkingWebView.setVisibility(View.GONE);
             twitterWebView.setVisibility(View.GONE);
         } else if (tabIndex == 1) {
             dashboardLayout.setVisibility(View.GONE);
+            webContainerLayout.setVisibility(View.VISIBLE);
+            webHeaderTitle.setText("🌐 xworking.net Login");
             xworkingWebView.setVisibility(View.VISIBLE);
             twitterWebView.setVisibility(View.GONE);
             if (xworkingWebView.getUrl() == null || xworkingWebView.getUrl().isEmpty()) {
@@ -285,6 +334,8 @@ public class MainActivity extends Activity {
             }
         } else if (tabIndex == 2) {
             dashboardLayout.setVisibility(View.GONE);
+            webContainerLayout.setVisibility(View.VISIBLE);
+            webHeaderTitle.setText("🐦 X (Twitter) Login");
             xworkingWebView.setVisibility(View.GONE);
             twitterWebView.setVisibility(View.VISIBLE);
             if (twitterWebView.getUrl() == null || twitterWebView.getUrl().isEmpty()) {
@@ -318,7 +369,22 @@ public class MainActivity extends Activity {
         xworkingWebView.addJavascriptInterface(new Bridge(), "AndroidBridge");
         twitterWebView.addJavascriptInterface(new Bridge(), "AndroidBridge");
 
+        // ── XWORKING WEBVIEW CLIENT ──
         xworkingWebView.setWebViewClient(new WebViewClient() {
+            @Override
+            public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
+                String url = request.getUrl().toString();
+                if (url.startsWith("http://") || url.startsWith("https://")) {
+                    return false; // Load inside WebView
+                }
+                return true;
+            }
+
+            @Override
+            public void onReceivedSslError(WebView view, SslErrorHandler handler, SslError error) {
+                handler.proceed(); // Prevent SSL handshake drops on cellular networks
+            }
+
             @Override
             public void onPageFinished(WebView view, String url) {
                 CookieManager.getInstance().flush();
@@ -329,7 +395,22 @@ public class MainActivity extends Activity {
             }
         });
 
+        // ── TWITTER WEBVIEW CLIENT (Robust Zero-White-Screen Handler) ──
         twitterWebView.setWebViewClient(new WebViewClient() {
+            @Override
+            public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
+                String url = request.getUrl().toString();
+                if (url.startsWith("http://") || url.startsWith("https://")) {
+                    return false; // Tells WebView to handle and render the redirect internally
+                }
+                return true;
+            }
+
+            @Override
+            public void onReceivedSslError(WebView view, SslErrorHandler handler, SslError error) {
+                handler.proceed(); // Always proceed on Twitter CDN asset handshakes
+            }
+
             @Override
             public void onPageFinished(WebView view, String url) {
                 CookieManager.getInstance().flush();
@@ -341,13 +422,32 @@ public class MainActivity extends Activity {
     }
 
     private void configureWebView(WebView wv) {
+        wv.setLayerType(View.LAYER_TYPE_HARDWARE, null);
         WebSettings s = wv.getSettings();
         s.setJavaScriptEnabled(true);
         s.setDomStorageEnabled(true);
         s.setDatabaseEnabled(true);
+        s.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
+        s.setAllowFileAccess(true);
+        s.setAllowContentAccess(true);
         s.setMediaPlaybackRequiresUserGesture(false);
-        s.setUserAgentString("Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Mobile Safari/537.36");
-        wv.setWebChromeClient(new WebChromeClient());
+        s.setSupportMultipleWindows(true);
+        s.setJavaScriptCanOpenWindowsAutomatically(true);
+        s.setCacheMode(WebSettings.LOAD_DEFAULT);
+
+        // Standard official Chrome Mobile user agent
+        s.setUserAgentString("Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36");
+
+        // Handle popup/child auth windows directly inside the same WebView
+        wv.setWebChromeClient(new WebChromeClient() {
+            @Override
+            public boolean onCreateWindow(WebView view, boolean isDialog, boolean isUserGesture, Message resultMsg) {
+                WebView.WebViewTransport transport = (WebView.WebViewTransport) resultMsg.obj;
+                transport.setWebView(view);
+                resultMsg.sendToTarget();
+                return true;
+            }
+        });
     }
 
     private void startAutoPilot() {
@@ -414,14 +514,14 @@ public class MainActivity extends Activity {
         public void onVideoTick(int sec, int totalSec, boolean isSoundOn) {
             mainHandler.post(() -> {
                 txtTimer.setText(sec + "s / " + totalSec + "s");
-                txtTimer.setTextColor(0xFFFFAB00); // Amber while watching
+                txtTimer.setTextColor(0xFFFFAB00);
 
                 if (isSoundOn) {
                     txtSound.setText("🔊 ON (20%)");
-                    txtSound.setTextColor(0xFF00E676); // Glowing Emerald Green
+                    txtSound.setTextColor(0xFF00E676);
                 } else {
                     txtSound.setText("🔇 Muted");
-                    txtSound.setTextColor(0xFFF4212E); // Red if muted
+                    txtSound.setTextColor(0xFFF4212E);
                 }
             });
         }
