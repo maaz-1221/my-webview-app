@@ -38,6 +38,11 @@ public class MainActivity extends Activity {
     private Button tabXworkingBtn;
     private Button tabTwitterBtn;
 
+    // ── Live Telemetry Status HUD Cards ──
+    private TextView txtTaskCount;
+    private TextView txtTimer;
+    private TextView txtSound;
+
     private boolean isRunning = false;
     private int completedTasks = 0;
     private int maxTasks = 8;
@@ -112,7 +117,7 @@ public class MainActivity extends Activity {
         dashboardLayout.setLayoutParams(new LinearLayout.LayoutParams(-1, -1));
 
         TextView title = new TextView(this);
-        title.setText("⚡ XCELERATE MOBILE BOOSTER");
+        title.setText("⚡ MAAZ AUTO XCELERATE");
         title.setTextSize(16);
         title.setTextColor(0xFF00E5FF);
         title.setTypeface(Typeface.DEFAULT_BOLD);
@@ -149,7 +154,7 @@ public class MainActivity extends Activity {
 
         LinearLayout btnRow = new LinearLayout(this);
         btnRow.setOrientation(LinearLayout.HORIZONTAL);
-        btnRow.setPadding(0, 16, 0, 16);
+        btnRow.setPadding(0, 14, 0, 14);
 
         startButton = new Button(this);
         startButton.setText("START AUTO-PILOT");
@@ -169,6 +174,36 @@ public class MainActivity extends Activity {
         btnRow.addView(stopButton);
 
         dashboardLayout.addView(btnRow);
+
+        // ── LIVE TELEMETRY STATUS HUD CARDS ──
+        LinearLayout hudRow = new LinearLayout(this);
+        hudRow.setOrientation(LinearLayout.HORIZONTAL);
+        hudRow.setPadding(0, 0, 0, 12);
+
+        LinearLayout taskCard = createHudCard("TASKS DONE", "0 / 8", 0xFF00E5FF);
+        txtTaskCount = (TextView) taskCard.getChildAt(1);
+        taskCard.setLayoutParams(new LinearLayout.LayoutParams(0, -2, 1f));
+        hudRow.addView(taskCard);
+
+        View sp1 = new View(this);
+        sp1.setLayoutParams(new LinearLayout.LayoutParams(8, 1));
+        hudRow.addView(sp1);
+
+        LinearLayout timerCard = createHudCard("WATCH TIMER", "0s / 16s", 0xFFFFAB00);
+        txtTimer = (TextView) timerCard.getChildAt(1);
+        timerCard.setLayoutParams(new LinearLayout.LayoutParams(0, -2, 1.1f));
+        hudRow.addView(timerCard);
+
+        View sp2 = new View(this);
+        sp2.setLayoutParams(new LinearLayout.LayoutParams(8, 1));
+        hudRow.addView(sp2);
+
+        LinearLayout soundCard = createHudCard("SOUND STATE", "WAITING", 0xFF8B98A5);
+        txtSound = (TextView) soundCard.getChildAt(1);
+        soundCard.setLayoutParams(new LinearLayout.LayoutParams(0, -2, 1.2f));
+        hudRow.addView(soundCard);
+
+        dashboardLayout.addView(hudRow);
 
         ScrollView sv = new ScrollView(this);
         sv.setLayoutParams(new LinearLayout.LayoutParams(-1, 0, 1f));
@@ -207,6 +242,30 @@ public class MainActivity extends Activity {
         stopButton.setOnClickListener(v -> stopAutoPilot());
 
         updateTabColors();
+    }
+
+    private LinearLayout createHudCard(String labelText, String valText, int valColor) {
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setBackgroundColor(0xFF151922);
+        card.setPadding(10, 10, 10, 10);
+
+        TextView lbl = new TextView(this);
+        lbl.setText(labelText);
+        lbl.setTextSize(9);
+        lbl.setTextColor(0xFF8B98A5);
+        lbl.setTypeface(Typeface.DEFAULT_BOLD);
+        card.addView(lbl);
+
+        TextView val = new TextView(this);
+        val.setText(valText);
+        val.setTextSize(12);
+        val.setTextColor(valColor);
+        val.setTypeface(Typeface.DEFAULT_BOLD);
+        val.setPadding(0, 4, 0, 0);
+        card.addView(val);
+
+        return card;
     }
 
     private void showTab(int tabIndex) {
@@ -306,8 +365,13 @@ public class MainActivity extends Activity {
         startButton.setVisibility(View.GONE);
         stopButton.setVisibility(View.VISIBLE);
 
+        txtTaskCount.setText("0 / " + maxTasks);
+        txtTimer.setText("Starting...");
+        txtSound.setText("INITIALIZING");
+        txtSound.setTextColor(0xFF00E5FF);
+
         appendLog("🚀 Auto-Pilot Starting on: " + boardUrl);
-        showTab(0); // Ensure dashboard is visible while running
+        showTab(0);
         xworkingWebView.loadUrl(boardUrl);
     }
 
@@ -315,6 +379,8 @@ public class MainActivity extends Activity {
         isRunning = false;
         startButton.setVisibility(View.VISIBLE);
         stopButton.setVisibility(View.GONE);
+        txtSound.setText("STOPPED");
+        txtSound.setTextColor(0xFF8B98A5);
         appendLog("⏹️ Auto-Pilot Stopped by user.");
     }
 
@@ -345,15 +411,40 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface
+        public void onVideoTick(int sec, int totalSec, boolean isSoundOn) {
+            mainHandler.post(() -> {
+                txtTimer.setText(sec + "s / " + totalSec + "s");
+                txtTimer.setTextColor(0xFFFFAB00); // Amber while watching
+
+                if (isSoundOn) {
+                    txtSound.setText("🔊 ON (20%)");
+                    txtSound.setTextColor(0xFF00E676); // Glowing Emerald Green
+                } else {
+                    txtSound.setText("🔇 Muted");
+                    txtSound.setTextColor(0xFFF4212E); // Red if muted
+                }
+            });
+        }
+
+        @JavascriptInterface
         public void onTaskUrlFound(String url, String handle) {
             appendLog("🔗 Opening Twitter task for @" + handle + "...");
-            mainHandler.post(() -> twitterWebView.loadUrl(url));
+            mainHandler.post(() -> {
+                txtTimer.setText("Loading...");
+                txtSound.setText("CONNECTING");
+                txtSound.setTextColor(0xFF00E5FF);
+                twitterWebView.loadUrl(url);
+            });
         }
 
         @JavascriptInterface
         public void onTwitterCompleted() {
             appendLog("✅ Twitter actions done. Submitting on xworking.net...");
             mainHandler.post(() -> {
+                txtTimer.setText("16s / 16s");
+                txtTimer.setTextColor(0xFF00E676);
+                txtSound.setText("SUBMITTING");
+                txtSound.setTextColor(0xFF00E5FF);
                 xworkingWebView.evaluateJavascript("if(window.__xcel_submit_task) window.__xcel_submit_task();", null);
             });
         }
@@ -361,6 +452,14 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public void onTaskSubmitted() {
             completedTasks++;
+            mainHandler.post(() -> {
+                txtTaskCount.setText(completedTasks + " / " + maxTasks);
+                txtTimer.setText("16s / 16s");
+                txtTimer.setTextColor(0xFF00E676);
+                txtSound.setText("VERIFIED ✅");
+                txtSound.setTextColor(0xFF00E676);
+            });
+
             appendLog("🎉 Task (" + completedTasks + "/" + maxTasks + ") Complete!");
             if (completedTasks >= maxTasks || !isRunning) {
                 appendLog("🏁 All " + maxTasks + " tasks finished!");

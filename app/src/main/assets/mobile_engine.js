@@ -159,7 +159,12 @@
             try { vid.volume = 0.20; vid.muted = false; } catch(e) {}
           }
 
-          log(`▶️ Video watch: (${elapsed}/${targetWatchSec}s) [Sound ON 🔊]`, 'progress');
+          if (window.AndroidBridge && typeof window.AndroidBridge.onVideoTick === 'function') {
+            window.AndroidBridge.onVideoTick(elapsed, targetWatchSec, !vid.muted);
+          }
+
+          const soundTxt = vid.muted ? 'Muted 🔇' : 'Sound ON 🔊 (20%)';
+          log(`▶️ Video watch: (${elapsed}/${targetWatchSec}s) [${soundTxt}]`, 'progress');
         }
         log('✅ 16s Video Retention Mukammal!', 'success');
       } else {
