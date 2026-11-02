@@ -412,13 +412,22 @@ public class MainActivity extends Activity {
         xworkingWebView.setWebViewClient(new WebViewClient() {
             @Override
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
-                String url = request.getUrl().toString();
-                if (url.contains("/status/")) {
-                    appendLog("🔗 Captured tweet URL: " + url);
-                    mainHandler.post(() -> twitterWebView.loadUrl(url));
-                    return true;
+                String rawUrl = request.getUrl().toString();
+                if (rawUrl.contains("/status/")) {
+                    String cleanUrl = extractCleanTweetUrl(rawUrl);
+                    if (cleanUrl != null) {
+                        appendLog("🚀 Opening Tweet: " + cleanUrl);
+                        mainHandler.post(() -> {
+                            txtTimer.setText("Loading...");
+                            txtSound.setText("CONNECTING");
+                            txtSound.setTextColor(0xFF00E5FF);
+                            twitterWebView.loadUrl(cleanUrl);
+                        });
+                        xworkingWebView.evaluateJavascript("if(window.__xcel_on_link_captured) window.__xcel_on_link_captured('" + cleanUrl + "');", null);
+                        return true;
+                    }
                 }
-                if (url.startsWith("http://") || url.startsWith("https://")) {
+                if (rawUrl.startsWith("http://") || rawUrl.startsWith("https://")) {
                     return false; // Load inside WebView
                 }
                 return true;
@@ -503,6 +512,20 @@ public class MainActivity extends Activity {
         });
     }
 
+    private String extractCleanTweetUrl(String raw) {
+        if (raw == null) return null;
+        try {
+            java.util.regex.Pattern p = java.util.regex.Pattern.compile("(?:x|twitter)\\.com/([a-zA-Z0-9_]+)/status/(\\d+)");
+            java.util.regex.Matcher m = p.matcher(raw);
+            if (m.find()) {
+                return "https://x.com/" + m.group(1) + "/status/" + m.group(2);
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        return null;
+    }
+
     private void startAutoPilot() {
         isRunning = true;
         completedTasks = 0;
@@ -526,12 +549,6 @@ public class MainActivity extends Activity {
         appendLog("🚀 Auto-Pilot Starting on: " + boardUrl);
         showTab(0);
         xworkingWebView.loadUrl(boardUrl);
-        xworkingWebView.evaluateJavascript(engineJs, null);
-        mainHandler.postDelayed(() -> {
-            if (isRunning) {
-                xworkingWebView.evaluateJavascript("if(window.__xcel_pick_task) window.__xcel_pick_task();", null);
-            }
-        }, 2500);
     }
 
     private void stopAutoPilot() {
