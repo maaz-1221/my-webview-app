@@ -413,6 +413,11 @@ public class MainActivity extends Activity {
             @Override
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
                 String url = request.getUrl().toString();
+                if (url.contains("/status/")) {
+                    appendLog("🔗 Captured tweet URL: " + url);
+                    mainHandler.post(() -> twitterWebView.loadUrl(url));
+                    return true;
+                }
                 if (url.startsWith("http://") || url.startsWith("https://")) {
                     return false; // Load inside WebView
                 }
@@ -521,6 +526,12 @@ public class MainActivity extends Activity {
         appendLog("🚀 Auto-Pilot Starting on: " + boardUrl);
         showTab(0);
         xworkingWebView.loadUrl(boardUrl);
+        xworkingWebView.evaluateJavascript(engineJs, null);
+        mainHandler.postDelayed(() -> {
+            if (isRunning) {
+                xworkingWebView.evaluateJavascript("if(window.__xcel_pick_task) window.__xcel_pick_task();", null);
+            }
+        }, 2500);
     }
 
     private void stopAutoPilot() {
