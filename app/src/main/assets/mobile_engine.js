@@ -34,9 +34,15 @@
       Object.defineProperty(Document.prototype, 'visibilityState', { get: () => 'visible', configurable: true });
     } catch(e) {}
 
-    // Global tweet map and last-opened URL tracker
+    // Global tweet map, captured link tracker, and pick-task guard
     window.__xcel_tweet_map = window.__xcel_tweet_map || new Map();
     window.__xcel_last_opened_url = null;
+    window.__xcel_captured_url = null;
+    window.__xcel_is_picking = false;
+
+    window.__xcel_on_link_captured = function(cleanUrl) {
+      window.__xcel_captured_url = cleanUrl;
+    };
 
     // 1. Intercept window.open: xworking.net calls window.open when "X pe kholein" is clicked!
     const origOpen = window.open;
@@ -44,9 +50,11 @@
       if (url) {
         const u = String(url);
         window.__xcel_last_opened_url = u;
-        const m = u.match(/(?:x|twitter)\.com\/([a-zA-Z0-9_]{1,20})\/status\/(\d+)/i);
+        const m = u.match(/(?:x|twitter)\.com\/([a-zA-Z0-9_]+)\/status\/(\d+)/i);
         if (m) {
-          window.__xcel_tweet_map.set(m[1].toLowerCase(), u.split('?')[0]);
+          const clean = `https://x.com/${m[1]}/status/${m[2]}`;
+          window.__xcel_tweet_map.set(m[1].toLowerCase(), clean);
+          window.__xcel_captured_url = clean;
         }
       }
       return { closed: false, focus: () => {}, close: () => {} };
@@ -83,9 +91,13 @@
 
     // Function called by Android to pick the next task
     window.__xcel_pick_task = async function() {
+      if (window.__xcel_is_picking) return;
+      window.__xcel_is_picking = true;
+
       const cards = [...document.querySelectorAll('article.lk:not(.done):not([data-xcel-done="true"])')];
       if (cards.length === 0) {
         log('Is waqt koi task baqi nahi hai.', 'warn');
+        window.__xcel_is_picking = false;
         if (window.AndroidBridge) window.AndroidBridge.onNoTasksLeft();
         return;
       }
@@ -105,6 +117,7 @@
                       });
 
       window.__xcel_last_opened_url = null;
+      window.__xcel_captured_url = null;
 
       if (openBtn) {
         card.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -112,12 +125,19 @@
         try { openBtn.click(); } catch(e) {}
       }
 
-      // 2. Poll for the captured Tweet URL (up to 2 seconds)
+      // 2. Poll for the captured Tweet URL (from Android Intent catch, window.open, or fetch)
       let tweetUrl = null;
-      for (let w = 0; w < 20; w++) {
-        if (window.__xcel_last_opened_url && (window.__xcel_last_opened_url.includes('/status/') || window.__xcel_last_opened_url.includes('x.com') || window.__xcel_last_opened_url.includes('twitter.com'))) {
-          tweetUrl = window.__xcel_last_opened_url.split('?')[0];
+      for (let w = 0; w < 30; w++) {
+        if (window.__xcel_captured_url) {
+          tweetUrl = window.__xcel_captured_url;
           break;
+        }
+        if (window.__xcel_last_opened_url) {
+          const m = window.__xcel_last_opened_url.match(/(?:x|twitter)\.com\/([a-zA-Z0-9_]+)\/status\/(\d+)/i);
+          if (m) {
+            tweetUrl = `https://x.com/${m[1]}/status/${m[2]}`;
+            break;
+          }
         }
         if (window.__xcel_tweet_map && window.__xcel_tweet_map.has(cleanH)) {
           tweetUrl = window.__xcel_tweet_map.get(cleanH);
@@ -129,24 +149,31 @@
       // 3. Fallbacks: check <a> tag, data attributes, or card innerHTML
       if (!tweetUrl) {
         const link = card.querySelector('a[href*="/status/"], a[href*="twitter.com"], a[href*="x.com"]');
-        if (link && link.href) tweetUrl = link.href.split('?')[0];
+        if (link && link.href) {
+          const m = link.href.match(/(?:x|twitter)\.com\/([a-zA-Z0-9_]+)\/status\/(\d+)/i);
+          if (m) tweetUrl = `https://x.com/${m[1]}/status/${m[2]}`;
+        }
       }
 
       if (!tweetUrl && openBtn) {
         const dUrl = openBtn.getAttribute('data-url') || openBtn.getAttribute('data-href');
-        if (dUrl && dUrl.includes('/status/')) tweetUrl = dUrl.split('?')[0];
+        if (dUrl && dUrl.includes('/status/')) {
+          const m = dUrl.match(/(?:x|twitter)\.com\/([a-zA-Z0-9_]+)\/status\/(\d+)/i);
+          if (m) tweetUrl = `https://x.com/${m[1]}/status/${m[2]}`;
+        }
       }
 
       if (!tweetUrl) {
-        const m = (card.innerHTML || '').match(/https?:\/\/(?:twitter\.com|x\.com)\/([a-zA-Z0-9_]{1,20})\/status\/(\d+)/i);
-        if (m) tweetUrl = m[0].split('?')[0];
+        const m = (card.innerHTML || '').match(/(?:x|twitter)\.com\/([a-zA-Z0-9_]+)\/status\/(\d+)/i);
+        if (m) tweetUrl = `https://x.com/${m[1]}/status/${m[2]}`;
       }
 
-      // If still not found, skip gracefully with a 2-second breath (DO NOT SPAM-SKIP)
+      // If still not found, skip gracefully with a 2-second breath
       if (!tweetUrl) {
         log(`⚠️ @${handle} ka tweet URL nahi mila, pause le kar agla check kar raha hoon...`, 'warn');
         card.setAttribute('data-xcel-done', 'true');
-        await sleep(2000);
+        window.__xcel_is_picking = false;
+        await sleep(2500);
         window.__xcel_pick_task();
         return;
       }
@@ -161,7 +188,10 @@
     // Function called by Android when Twitter task is finished
     window.__xcel_submit_task = async function() {
       const card = document.querySelector('article.lk[data-xcel-active="true"]');
-      if (!card) return;
+      if (!card) {
+        window.__xcel_is_picking = false;
+        return;
+      }
 
       log('xworking.net par task submit ho raha hai (away_ms >= 16s)...', 'progress');
 
@@ -179,6 +209,7 @@
 
       card.removeAttribute('data-xcel-active');
       card.setAttribute('data-xcel-done', 'true');
+      window.__xcel_is_picking = false;
       if (window.AndroidBridge) {
         window.AndroidBridge.onTaskSubmitted();
       }
